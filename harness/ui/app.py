@@ -36,7 +36,6 @@ if env_file.exists():
         os.environ.setdefault(k.strip(), v.strip())
 
 app = FastAPI(title="TugonAI Agent Console", version="1.1.0")
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def load_questions() -> dict:
@@ -261,6 +260,12 @@ def chat_stream(body: ChatRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# Static assets at bucket-root paths (CloudFront / S3 sync of harness/ui/static/).
+# Keep /static/* as an alias for local backwards compatibility.
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static_alias")
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="site")
 
 
 def main():

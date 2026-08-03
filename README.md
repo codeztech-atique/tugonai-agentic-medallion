@@ -188,7 +188,10 @@ Example sync:
 ```bash
 aws s3 sync harness/ui/static/ s3://YOUR_BUCKET/ --delete
 # then point a CloudFront distribution at that bucket (default root object: index.html)
+# Invalidate CloudFront after sync: /* 
 ```
+
+Asset URLs are **root paths** (`/styles.css`, `/app.js`, `/favicon.svg`) so they match an S3 bucket-root sync. Do **not** expect `/static/...` on CloudFront.
 
 **Custom error page:** sync includes `error.html`. In CloudFront → Error pages, map **403** and **404** (and optionally 5xx) to `/error.html` with response code **200** (SPA-friendly) or keep the original code. Optional query: `/error.html?code=404`.
 

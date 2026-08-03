@@ -1,0 +1,62 @@
+version: 1
+
+agent:
+  name: "schema_agent"
+  language: python
+  entrypoint: "main.py"
+  entry_module: "main"
+  requirements: "requirements.txt"
+
+deployment:
+  type: "s3"
+  region: "ap-south-1"
+  account: "485947658225"
+  runtime: "PYTHON_3_11"
+  execution_role: "arn:aws:iam::485947658225:role/TugonAIAgentCoreRuntimeRole"
+  s3_uri: ""
+  container_uri: ""
+
+lifecycle_configuration:
+  idle_runtime_session_timeout: null
+  max_lifetime: null
+
+bedrock_agentcore:
+  agent_id: null
+  agent_arn: null
+  agent_session_id: null
+
+codebuild:
+  project_name: null
+  execution_role: null
+  source_bucket: null
+
+memory:
+  mode: STM_AND_LTM
+  memory_id: "TugonAIMedallionSemanticMemory-QUGvAEC1vO"
+  memory_arn: null
+  memory_name: "schema_agent_memory"
+  event_expiry_days: 30
+  first_invoke_memory_check_done: false
+  was_created_by_toolkit: false
+
+identity:
+  credential_providers: []
+  workload: null
+
+aws_jwt:
+  enabled: false
+  audiences: []
+  signing_algorithm: ES384
+  issuer_url: null
+  duration_seconds: 300
+
+authorization_configuration:
+  mode: "iam"
+  oauth_configuration:
+    issuer_url: ""
+    audience: ""
+
+request_header_configuration:
+  allowlist: ""
+
+api_key_env_var_name: null

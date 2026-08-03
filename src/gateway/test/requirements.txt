@@ -1,0 +1,4 @@
+strands-agents
+bedrock-agentcore-starter-toolkit
+boto3
+mcp

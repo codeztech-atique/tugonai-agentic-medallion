@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TugonAI — Agent Console</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/static/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/github-dark.min.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="bar">
+      <div class="bar-left">
+        <button type="button" class="icon-btn mobile-only" id="menuBtn" aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="brand-lockup">
+          <span class="brand">TugonAI</span>
+          <span class="brand-badge">Console</span>
+        </div>
+      </div>
+
+      <div class="bar-right">
+        <div class="status" id="health" title="Connection status">
+          <span class="dot" id="healthDot"></span>
+          <span id="healthText">…</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="rail" id="rail">
+        <div class="rail-head">
+          <div class="section-label">
+            <h2>Agents</h2>
+          </div>
+          <button type="button" class="icon-btn mobile-only" id="closeRail" aria-label="Close menu">✕</button>
+        </div>
+
+        <section class="rail-section agent-pick">
+          <div class="agent-list" role="tablist">
+            <button type="button" class="agent-card active" data-agent="schema" id="btnSchema">
+              <span class="agent-card-name">Schema Inference</span>
+              <span class="agent-card-desc" id="blurbSchema">Bronze → typed silver DDL via Gateway → MCP</span>
+            </button>
+            <button type="button" class="agent-card" data-agent="quality" id="btnQuality">
+              <span class="agent-card-name">Data Quality</span>
+              <span class="agent-card-desc" id="blurbQuality">Profile bronze and propose cleaning rules with why</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="rail-section grow">
+          <div class="section-label">
+            <h2>Curated prompts</h2>
+            <span id="qCount"></span>
+          </div>
+          <div class="question-list" id="questionList"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-label"><h2>Session</h2></div>
+          <label class="field">
+            <span>Session</span>
+            <input id="sessionId" type="text" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span>Actor</span>
+            <input id="actorId" type="text" value="ui-user" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="rail-actions">
+            <button type="button" class="btn-ghost" id="newSession">New session</button>
+            <button type="button" class="btn-ghost" id="clearChat">Clear chat</button>
+          </div>
+          <details class="meta-fold">
+            <summary><span class="meta-fold-label">Runtime IDs</span><span class="meta-fold-chevron" aria-hidden="true"></span></summary>
+            <dl class="meta-grid" id="metaGrid"></dl>
+          </details>
+        </section>
+      </aside>
+
+      <div class="scrim mobile-only" id="scrim" hidden></div>
+
+      <section class="stage">
+        <div class="transcript" id="transcript" aria-live="polite">
+          <div class="empty" id="emptyState">
+            <div class="empty-mark">◈</div>
+            <h3>Talk to the live agents</h3>
+            <p>Pick a curated prompt or type below. Traffic goes Agent → Gateway → MCP → Supabase.</p>
+          </div>
+        </div>
+
+        <form class="composer" id="composer">
+          <div class="composer-box">
+            <textarea id="prompt" rows="1" placeholder="Ask the agent…" required></textarea>
+            <div class="composer-row">
+              <span class="composer-hint">Streaming · tool traces on</span>
+              <button type="submit" class="send" id="sendBtn">
+                <span class="send-label">Send</span>
+                <span class="send-hint">↵</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

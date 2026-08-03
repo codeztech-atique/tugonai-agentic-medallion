@@ -1,0 +1,103 @@
+{
+  "schema_agent": [
+    {
+      "id": "S1",
+      "title": "Inventory",
+      "prompt": "Using tools only, list all tables in bronze, silver, gold, and meta. Reply with schema.table names only.",
+      "expect_signals": ["raw_tickets", "tickets", "bronze", "silver"],
+      "why_ask": "Confirms Gateway → MCP → Supabase path before harder work."
+    },
+    {
+      "id": "S2",
+      "title": "Sample bronze",
+      "prompt": "Sample 5 rows from bronze.raw_tickets and describe the messiest columns you see (dates, priority, status, category). Be concrete.",
+      "expect_signals": ["created_at", "priority", "status"],
+      "why_ask": "Forces sample_rows and shows the agent understands real messiness."
+    },
+    {
+      "id": "S3",
+      "title": "Propose silver schema",
+      "prompt": "Propose a typed silver schema for bronze.raw_tickets. Do not invent columns. Prefer staging table silver.tickets_proposed. Return DDL + transform SQL as JSON with keys ddl, transform_sql, rationale, trust.",
+      "expect_signals": ["ddl", "transform_sql", "rationale", "trust"],
+      "why_ask": "Core Schema Inference deliverable for the take-home."
+    },
+    {
+      "id": "S4",
+      "title": "Type choices",
+      "prompt": "For created_at, resolved_at, cost, sla_hours, and priority: what Postgres types would you choose and why? Cite evidence from samples or profile_table.",
+      "expect_signals": ["timestamptz", "numeric", "priority"],
+      "why_ask": "Checks prompt quality — rationale, not just DDL dump."
+    },
+    {
+      "id": "S5",
+      "title": "Trust vs override",
+      "prompt": "Would you set trust=safe_to_apply for overwriting production silver.tickets right now? Explain when you would override your own DDL.",
+      "expect_signals": ["review_required", "override", "staging"],
+      "why_ask": "Evaluation criterion: honesty about agent vs human control."
+    },
+    {
+      "id": "S6",
+      "title": "Drift bonus",
+      "prompt": "If a new bronze column vendor_region appeared tomorrow as free text, what migration DDL and silver transform would you propose? Do not execute destructive SQL.",
+      "expect_signals": ["vendor_region", "alter", "migration"],
+      "why_ask": "Schema evolution bonus from the assignment."
+    }
+  ],
+  "quality_agent": [
+    {
+      "id": "Q1",
+      "title": "Profile bronze",
+      "prompt": "Profile bronze.raw_tickets focusing on priority, status, category, cost, and resolved_at. Summarize null rates and cardinality.",
+      "expect_signals": ["null", "priority", "status", "category"],
+      "why_ask": "Core Data Quality profiling path via MCP."
+    },
+    {
+      "id": "Q2",
+      "title": "High-severity rules",
+      "prompt": "Propose high-severity cleaning rules for this dataset. For each rule include name, why it matters, and SQL or Python. Return JSON with profile_summary and rules[].",
+      "expect_signals": ["rules", "why", "severity"],
+      "why_ask": "Must explain WHY, not only flag anomalies."
+    },
+    {
+      "id": "Q3",
+      "title": "Priority aliases",
+      "prompt": "priority has values like hi, HIGH, crit, urgent!!!, ???. Propose a normalization map and explain impact on gold SLA metrics if we skip normalization.",
+      "expect_signals": ["high", "critical", "normalize", "sla"],
+      "why_ask": "Real mess in the CSV; tests business impact reasoning."
+    },
+    {
+      "id": "Q4",
+      "title": "Date anomalies",
+      "prompt": "How should we handle resolved_at earlier than created_at, and mixed date formats? Propose rules with severity and why.",
+      "expect_signals": ["resolved_at", "created_at", "anomaly"],
+      "why_ask": "Known data quality issue in source tickets."
+    },
+    {
+      "id": "Q5",
+      "title": "Drop-row caution",
+      "prompt": "Is dropping all rows with empty ticket_id safe? Estimate impact and say whether a human should approve before executing.",
+      "expect_signals": ["ticket_id", "approve", "impact"],
+      "why_ask": "Tradeoff awareness — agents should not silently delete lots of data."
+    },
+    {
+      "id": "Q6",
+      "title": "Gold readiness",
+      "prompt": "After cleaning, which silver fields are required for gold SLA performance and cost_by_assignee models? What still blocks trustworthy aggregations?",
+      "expect_signals": ["sla", "cost", "assignee", "silver"],
+      "why_ask": "Links quality work to gold layer usefulness."
+    }
+  ],
+  "memory_session": [
+    {
+      "id": "M1",
+      "title": "STM recall",
+      "agent": "schema_agent",
+      "turns": [
+        "Remember our demo codeword is MEDALLION-ALPHA. Reply OK only.",
+        "What demo codeword did I set? Reply with the codeword only."
+      ],
+      "expect_signals": ["MEDALLION-ALPHA"],
+      "why_ask": "Validates short-term session memory with same session_id/actor_id."
+    }
+  ]
+}

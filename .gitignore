@@ -21,3 +21,4 @@ harness/results/
 .vscode/
 *.log
 .cachebust
+build/

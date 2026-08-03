@@ -23,7 +23,29 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(61, 214, 198, 0.35) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(61, 214, 198, 0.35);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(61, 214, 198, 0.55);
+}
 
 html, body {
   margin: 0;
@@ -282,7 +304,7 @@ button, textarea, input { font: inherit; color: inherit; }
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  padding-right: 0.15rem;
+  padding-right: 0.35rem;
   overscroll-behavior: contain;
 }
 

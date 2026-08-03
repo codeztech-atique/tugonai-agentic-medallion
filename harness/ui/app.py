@@ -21,10 +21,21 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-ROOT = Path(__file__).resolve().parents[2]
-QUESTIONS_PATH = ROOT / "harness" / "questions.json"
-STATE_PATH = ROOT / "src" / "gateway" / "setup" / "deploy_state.json"
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+UI_DIR = Path(__file__).resolve().parent
+ROOT = UI_DIR.parents[1] if (UI_DIR.parents[1] / "harness").exists() else UI_DIR
+STATIC_DIR = UI_DIR / "static"
+
+# Repo layout locally; Lambda zip may ship questions/state next to app.py.
+QUESTIONS_PATH = (
+    UI_DIR / "questions.json"
+    if (UI_DIR / "questions.json").exists()
+    else ROOT / "harness" / "questions.json"
+)
+STATE_PATH = (
+    UI_DIR / "deploy_state.json"
+    if (UI_DIR / "deploy_state.json").exists()
+    else ROOT / "src" / "gateway" / "setup" / "deploy_state.json"
+)
 
 env_file = ROOT / ".env"
 if env_file.exists():
@@ -39,13 +50,27 @@ app = FastAPI(title="TugonAI Agent Console", version="1.1.0")
 
 
 def load_questions() -> dict:
+    if not QUESTIONS_PATH.exists():
+        raise HTTPException(500, f"Missing questions: {QUESTIONS_PATH}")
     return json.loads(QUESTIONS_PATH.read_text())
 
 
 def load_state() -> dict:
-    if not STATE_PATH.exists():
-        raise HTTPException(500, f"Missing deploy state: {STATE_PATH}")
-    return json.loads(STATE_PATH.read_text())
+    if STATE_PATH.exists():
+        return json.loads(STATE_PATH.read_text())
+    # Lambda/env fallback (no secrets file required at runtime).
+    schema = os.environ.get("SCHEMA_AGENT_RUNTIME_ID")
+    quality = os.environ.get("QUALITY_AGENT_RUNTIME_ID")
+    if schema and quality:
+        return {
+            "schema_agent_runtime_id": schema,
+            "quality_agent_runtime_id": quality,
+            "memory_id": os.environ.get("MEMORY_ID"),
+            "mcp_runtime_id": os.environ.get("MCP_RUNTIME_ID"),
+            "gateway": {"gateway_id": os.environ.get("GATEWAY_ID")},
+            "region": os.environ.get("AWS_REGION", "ap-south-1"),
+        }
+    raise HTTPException(500, f"Missing deploy state: {STATE_PATH}")
 
 
 def agent_runtime_id(state: dict, agent: str) -> str:
@@ -58,9 +83,17 @@ def agent_runtime_id(state: dict, agent: str) -> str:
     return state[key]
 
 
+def agent_region() -> str:
+    return (
+        os.environ.get("AGENT_AWS_REGION")
+        or os.environ.get("AWS_REGION")
+        or "ap-south-1"
+    )
+
+
 def runtime_arn(runtime_id: str) -> str:
-    region = os.environ.get("AWS_REGION", "ap-south-1")
-    account = "485947658225"
+    region = agent_region()
+    account = os.environ.get("AWS_ACCOUNT", "485947658225")
     return f"arn:aws:bedrock-agentcore:{region}:{account}:runtime/{runtime_id}"
 
 
@@ -87,7 +120,7 @@ def iter_agent_stream(
 ) -> Iterator[dict[str, Any]]:
     import boto3
 
-    region = os.environ.get("AWS_REGION", "ap-south-1")
+    region = agent_region()
     client = boto3.client("bedrock-agentcore", region_name=region)
     payload = json.dumps(
         {"prompt": prompt, "session_id": session_id, "actor_id": actor_id}
@@ -164,13 +197,19 @@ def index():
 
 @app.get("/api/health")
 def health():
-    state_ok = STATE_PATH.exists()
+    try:
+        state = load_state()
+        state_ok = bool(
+            state.get("schema_agent_runtime_id") and state.get("quality_agent_runtime_id")
+        )
+    except Exception:
+        state_ok = False
     db = bool(os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_URL_POOLER"))
     return {
-        "ok": state_ok and db,
+        "ok": state_ok,
         "deploy_state": state_ok,
         "database_url_set": db,
-        "connected": state_ok and db,
+        "connected": state_ok,
     }
 
 
@@ -203,6 +242,88 @@ def questions():
         "schema": data.get("schema_agent", []),
         "quality": data.get("quality_agent", []),
         "memory": data.get("memory_session", []),
+    }
+
+
+def _normalize_agent_event(ev: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(ev, dict):
+        return None
+    if "event" in ev and len(ev) == 1:
+        inner = _parse_sse_chunk(str(ev["event"]))
+        if isinstance(inner, dict):
+            ev = inner
+        else:
+            return None
+    return ev if isinstance(ev, dict) else None
+
+
+@app.post("/api/chat")
+def chat(body: ChatRequest):
+    """Non-streaming chat — used by CloudFront → Lambda (SSE is unreliable there).
+
+    Collects thinking/tool events so the UI can still render the trace panel.
+    """
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(400, "prompt is required")
+    agent = body.agent.strip().lower()
+    if agent not in {"schema", "quality"}:
+        raise HTTPException(400, "agent must be schema or quality")
+
+    state = load_state()
+    rid = agent_runtime_id(state, agent)
+    session_id = body.session_id or f"ui-{uuid.uuid4().hex}"
+    if len(session_id) < 33:
+        session_id = f"{session_id}-{uuid.uuid4().hex}"
+    actor_id = body.actor_id or "ui-user"
+    started = time.time()
+
+    final_response = ""
+    memory_id = state.get("memory_id")
+    error = None
+    events: list[dict[str, Any]] = []
+    try:
+        for raw in iter_agent_stream(rid, prompt, session_id, actor_id):
+            ev = _normalize_agent_event(raw) if isinstance(raw, dict) else None
+            if not ev:
+                continue
+            et = ev.get("type")
+            # Trace panel only needs thinking/tool; text/result stay out to keep payloads small.
+            if et in {"thinking", "tool", "error", "status"}:
+                events.append(ev)
+            if et == "error":
+                error = ev.get("content") or "agent error"
+            if et == "result":
+                final_response = ev.get("content") or final_response
+            if et == "done":
+                final_response = ev.get("response") or final_response
+                memory_id = ev.get("memory_id") or memory_id
+            if et == "text" and ev.get("content"):
+                final_response = (final_response or "") + str(ev["content"])
+            if ev.get("memory_id"):
+                memory_id = ev["memory_id"]
+    except Exception as e:
+        error = str(e)
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    if error and not final_response:
+        return {
+            "error": error,
+            "events": events,
+            "session_id": session_id,
+            "actor_id": actor_id,
+            "memory_id": memory_id,
+            "elapsed_ms": elapsed_ms,
+            "agent": agent,
+        }
+    return {
+        "response": final_response,
+        "events": events,
+        "session_id": session_id,
+        "actor_id": actor_id,
+        "memory_id": memory_id,
+        "elapsed_ms": elapsed_ms,
+        "agent": agent,
     }
 
 
@@ -262,10 +383,10 @@ def chat_stream(body: ChatRequest):
     )
 
 
-# Static assets at bucket-root paths (CloudFront / S3 sync of harness/ui/static/).
-# Keep /static/* as an alias for local backwards compatibility.
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static_alias")
-app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="site")
+# Static assets: local only. On Lambda, S3/CloudFront serves the UI.
+if not os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static_alias")
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="site")
 
 
 def main():

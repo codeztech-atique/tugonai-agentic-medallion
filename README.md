@@ -2,6 +2,8 @@
 
 Bronze → silver → gold for messy facility support tickets, with **AWS Bedrock AgentCore** agents that only touch data through **Gateway → MCP → Postgres (Supabase)**.
 
+**Live Agent Console:** [https://d2ho05na7pcde8.cloudfront.net/](https://d2ho05na7pcde8.cloudfront.net/)
+
 Assignment brief: [docs/assignment.md](docs/assignment.md) · Specs: [specs/](specs/) · E2E: [specs/06-e2e-test.md](specs/06-e2e-test.md) · Question harness: [specs/07-question-harness.md](specs/07-question-harness.md)
 
 ---
@@ -171,46 +173,43 @@ pip install fastapi uvicorn boto3
 
 Features: pick Schema/Quality in the left rail, curated questions, live SSE tokens, Thinking & tools panel, Markdown answers.
 
-#### Hosting on S3 + CloudFront (static front door)
+#### Hosting on S3 + CloudFront
 
-**Upload this folder to S3 (website / CloudFront origin):**
+**Live distribution:** [https://d2ho05na7pcde8.cloudfront.net/](https://d2ho05na7pcde8.cloudfront.net/)
+
+```text
+Browser
+   │
+   ▼
+CloudFront  (d2ho05na7pcde8.cloudfront.net)
+   ├── /*        → S3 bucket `tugonai`  (harness/ui/static/)
+   └── /api/*    → Lambda Function URL  (harness/ui FastAPI via Mangum)
+```
+
+Static UI folder:
 
 ```text
 harness/ui/static/
 ├── index.html
 ├── app.js
 ├── styles.css
-└── favicon.svg
+├── favicon.svg
+├── error.html
+└── questions.json
 ```
 
-Example sync:
+Deploy / refresh (UI + API origin wiring):
 
 ```bash
-aws s3 sync harness/ui/static/ s3://YOUR_BUCKET/ --delete
-# then point a CloudFront distribution at that bucket (default root object: index.html)
-# Invalidate CloudFront after sync: /* 
+# Full deploy: Lambda console API + CloudFront /api/* + S3 sync + invalidate
+/opt/homebrew/bin/python3.11 scripts/deploy_console_api.py
+
+# Or static-only refresh:
+aws s3 sync harness/ui/static/ s3://tugonai/ --delete
+aws cloudfront create-invalidation --distribution-id E83KARFKKWVE5 --paths "/*"
 ```
 
-Asset URLs are **root paths** (`/styles.css`, `/app.js`, `/favicon.svg`) so they match an S3 bucket-root sync. Do **not** expect `/static/...` on CloudFront.
-
-**Custom error page:** sync includes `error.html`. In CloudFront → Error pages, map **403** and **404** (and optionally 5xx) to `/error.html` with response code **200** (SPA-friendly) or keep the original code. Optional query: `/error.html?code=404`.
-
-**Do not upload only the static files and expect chat to work.**  
-`app.js` calls `/api/health`, `/api/questions`, `/api/meta`, and `/api/chat/stream`. Those live in **`harness/ui/app.py`** (FastAPI + SigV4 → AgentCore). Pure S3 has no Python runtime.
-
-Recommended serverless shape:
-
-```text
-Browser
-   │
-   ▼
-CloudFront
-   ├── /*        → S3   (harness/ui/static/)
-   └── /api/*    → API  (Lambda Function URL / API Gateway + Lambda,
-                         or App Runner / ECS running harness/ui/app.py)
-```
-
-Until `/api/*` is wired to a backend with AWS credentials, keep using local `harness/ui/app.py`.
+Asset URLs are **root paths** (`/styles.css`, `/app.js`, `/favicon.svg`). Set CloudFront **Default root object** to `index.html`. On CloudFront the UI uses buffered `/api/chat` (with thinking/tool `events`); locally it prefers SSE `/api/chat/stream`.
 
 ### 4) CLI harness / E2E
 

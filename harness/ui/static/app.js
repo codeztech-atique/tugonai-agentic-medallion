@@ -283,7 +283,8 @@
   async function loadHealth() {
     try {
       const r = await fetch("/api/health", { cache: "no-store" });
-      if (!r.ok) throw new Error(`health ${r.status}`);
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      if (!r.ok || ct.includes("text/html")) throw new Error(`health ${r.status}`);
       const j = await r.json();
       el.healthDot.className = `dot ${j.ok || j.connected ? "ok" : "bad"}`;
       el.healthText.textContent = j.ok || j.connected ? "Connected" : "Not ready";
@@ -354,9 +355,15 @@
     el.sessionId.value = sessionId;
 
     try {
-      const r = await fetch("/api/chat/stream", {
+      // Prefer non-streaming JSON on CloudFront (Lambda-friendly); SSE locally.
+      const useStream = !/\.cloudfront\.net$/i.test(location.hostname);
+      const endpoint = useStream ? "/api/chat/stream" : "/api/chat";
+      const r = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: useStream ? "text/event-stream" : "application/json",
+        },
         body: JSON.stringify({
           agent: state.agent,
           prompt,
@@ -364,14 +371,64 @@
           actor_id: el.actorId.value.trim() || "ui-user",
         }),
       });
-      if (!r.ok || !r.body) {
+
+      const contentType = (r.headers.get("content-type") || "").toLowerCase();
+      if (!r.ok) {
         const t = await r.text();
-        const hint =
-          r.status === 403 || r.status === 404
-            ? "\n\nCloudFront is static-only right now. Wire `/api/*` to the FastAPI backend (`harness/ui/app.py`) to chat with agents."
-            : "";
-        setStreamText(ui, (t || `HTTP ${r.status}`) + hint);
+        setStreamText(
+          ui,
+          `API error (${r.status}). ${
+            r.status === 403 || r.status === 404
+              ? "Backend /api is not connected to CloudFront yet."
+              : t.slice(0, 400)
+          }`
+        );
         finishBubble(ui, { error: true, meta: { status: r.status } });
+        return;
+      }
+
+      // CloudFront often maps missing /api to index.html with HTTP 200.
+      if (contentType.includes("text/html")) {
+        setStreamText(
+          ui,
+          "API offline on CloudFront.\n\nThis distribution only serves static files from S3. " +
+            "Wire `/api/*` to the console API (Lambda Function URL running harness/ui) to chat with agents."
+        );
+        finishBubble(ui, { error: true, meta: { status: "static-only" } });
+        return;
+      }
+
+      if (!useStream) {
+        const j = await r.json();
+        // Replay thinking/tool traces collected server-side (Lambda is buffered, not SSE).
+        for (const ev of j.events || []) {
+          if (!ev || typeof ev !== "object") continue;
+          if (ev.type === "thinking") appendThinking(ui, ev.content);
+          else if (ev.type === "tool") upsertTool(ui, ev);
+          else if (ev.type === "text" && ev.content && !j.response) {
+            setStreamText(ui, (ui.text || "") + ev.content);
+          } else if (ev.type === "result" && ev.content && !j.response) {
+            setStreamText(ui, ev.content);
+          }
+        }
+        if (j.error) {
+          setStreamText(ui, String(j.error));
+          finishBubble(ui, { error: true, meta: { ms: j.elapsed_ms } });
+          return;
+        }
+        if (j.session_id) el.sessionId.value = j.session_id;
+        if (j.response) setStreamText(ui, j.response);
+        else if (!ui.text) setStreamText(ui, "(empty response)");
+        finishBubble(ui, {
+          error: !j.response && !ui.text,
+          meta: { ms: j.elapsed_ms, session: j.session_id, memory: j.memory_id },
+        });
+        return;
+      }
+
+      if (!r.body) {
+        setStreamText(ui, "Empty API response body.");
+        finishBubble(ui, { error: true });
         return;
       }
 
@@ -379,11 +436,22 @@
       const decoder = new TextDecoder();
       let buffer = "";
       let doneMeta = {};
+      let sawEvent = false;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        // Bail early if we clearly got an HTML document instead of SSE.
+        if (!sawEvent && buffer.includes("<!DOCTYPE html")) {
+          setStreamText(
+            ui,
+            "API offline on CloudFront (received HTML instead of agent stream).\n\n" +
+              "Connect `/api/*` to the FastAPI/Lambda backend to enable chat."
+          );
+          finishBubble(ui, { error: true, meta: { status: "static-only" } });
+          return;
+        }
         const parts = buffer.split("\n\n");
         buffer = parts.pop() || "";
         for (const part of parts) {
@@ -399,6 +467,7 @@
             continue;
           }
           if (!ev || typeof ev !== "object") continue;
+          sawEvent = true;
 
           if (ev.type === "thinking") appendThinking(ui, ev.content);
           else if (ev.type === "tool") upsertTool(ui, ev);
@@ -420,7 +489,15 @@
           }
         }
       }
-      finishBubble(ui, { error: false, meta: doneMeta });
+      if (!sawEvent && !ui.text) {
+        setStreamText(
+          ui,
+          "No agent events received. The `/api` backend is probably not attached to this CloudFront distribution."
+        );
+        finishBubble(ui, { error: true });
+      } else {
+        finishBubble(ui, { error: false, meta: doneMeta });
+      }
     } catch (err) {
       setStreamText(ui, String(err));
       finishBubble(ui, { error: true });

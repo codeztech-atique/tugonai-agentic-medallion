@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TugonAI — Something went wrong</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b1220;
+      --ink: #eef3ff;
+      --muted: #8b9bb8;
+      --line: rgba(176, 196, 230, 0.14);
+      --accent: #3dd6c6;
+      --accent-deep: #1aa896;
+      --accent-ink: #04221e;
+      --danger: #ff7b72;
+      --font: "DM Sans", system-ui, sans-serif;
+      --display: "Fraunces", Georgia, serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 8% -8%, rgba(61, 214, 198, 0.16), transparent 55%),
+        radial-gradient(700px 380px at 100% 0%, rgba(240, 163, 90, 0.1), transparent 50%),
+        linear-gradient(180deg, #0d1526 0%, #0b1220 48%, #0a101c 100%);
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 1.5rem;
+    }
+    .card {
+      width: min(440px, 100%);
+      text-align: center;
+      padding: 2rem 1.5rem;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(12, 18, 32, 0.82);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+    .mark {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 1rem;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      font-family: var(--display);
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--danger);
+      background: rgba(255, 123, 114, 0.1);
+      border: 1px solid rgba(255, 123, 114, 0.35);
+    }
+    .brand {
+      margin: 0 0 0.35rem;
+      font-family: var(--display);
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .code {
+      margin: 0 0 0.85rem;
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0 0 0.55rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    p {
+      margin: 0 0 1.35rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.55rem;
+      justify-content: center;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 7rem;
+      padding: 0.65rem 1rem;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .primary {
+      background: linear-gradient(180deg, #45e0cf, var(--accent-deep));
+      color: var(--accent-ink);
+      border: 0;
+    }
+    .ghost {
+      border: 1px solid var(--line);
+      color: var(--ink);
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <div class="mark" aria-hidden="true">!</div>
+      <p class="brand">TugonAI</p>
+      <p class="code" id="statusLabel">Error</p>
+      <h1 id="title">We couldn’t load that page</h1>
+      <p id="message">
+        The page may have moved, or CloudFront / S3 couldn’t serve it.
+        Head back to the Agent Console to continue.
+      </p>
+      <div class="actions">
+        <a class="primary" href="/">Go home</a>
+        <a class="ghost" href="javascript:history.back()">Go back</a>
+      </div>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var code = params.get("code") || "";
+      var map = {
+        "403": {
+          label: "403 · Forbidden",
+          title: "Access denied",
+          message: "You don’t have permission to view this resource, or the bucket policy blocked the request."
+        },
+        "404": {
+          label: "404 · Not found",
+          title: "Page not found",
+          message: "That path doesn’t exist in this distribution. Check the URL or return to the Agent Console."
+        },
+        "500": {
+          label: "500 · Server error",
+          title: "Something broke upstream",
+          message: "The origin returned an error. Try again in a moment, or open the home page."
+        },
+        "502": {
+          label: "502 · Bad gateway",
+          title: "Origin unreachable",
+          message: "CloudFront couldn’t reach the origin (S3 or API). Check the distribution origins and try again."
+        },
+        "503": {
+          label: "503 · Unavailable",
+          title: "Service temporarily unavailable",
+          message: "The service is overloaded or offline. Please retry shortly."
+        },
+        "504": {
+          label: "504 · Timeout",
+          title: "Gateway timeout",
+          message: "The origin took too long to respond. Retry, or return home."
+        }
+      };
+      var info = map[code];
+      if (!info) return;
+      document.getElementById("statusLabel").textContent = info.label;
+      document.getElementById("title").textContent = info.title;
+      document.getElementById("message").textContent = info.message;
+      document.title = "TugonAI — " + info.label;
+    })();
+  </script>
+</body>
+</html>

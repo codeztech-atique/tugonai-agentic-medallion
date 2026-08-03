@@ -190,6 +190,8 @@ aws s3 sync harness/ui/static/ s3://YOUR_BUCKET/ --delete
 # then point a CloudFront distribution at that bucket (default root object: index.html)
 ```
 
+**Custom error page:** sync includes `error.html`. In CloudFront → Error pages, map **403** and **404** (and optionally 5xx) to `/error.html` with response code **200** (SPA-friendly) or keep the original code. Optional query: `/error.html?code=404`.
+
 **Do not upload only the static files and expect chat to work.**  
 `app.js` calls `/api/health`, `/api/questions`, `/api/meta`, and `/api/chat/stream`. Those live in **`harness/ui/app.py`** (FastAPI + SigV4 → AgentCore). Pure S3 has no Python runtime.
 

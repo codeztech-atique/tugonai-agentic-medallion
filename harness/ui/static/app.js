@@ -3,6 +3,7 @@
     agent: "schema",
     questions: { schema: [], quality: [], memory: [] },
     meta: null,
+    apiOnline: false,
   };
 
   const el = {
@@ -281,29 +282,59 @@
 
   async function loadHealth() {
     try {
-      const r = await fetch("/api/health");
+      const r = await fetch("/api/health", { cache: "no-store" });
+      if (!r.ok) throw new Error(`health ${r.status}`);
       const j = await r.json();
       el.healthDot.className = `dot ${j.ok || j.connected ? "ok" : "bad"}`;
       el.healthText.textContent = j.ok || j.connected ? "Connected" : "Not ready";
+      state.apiOnline = Boolean(j.ok || j.connected);
     } catch {
+      state.apiOnline = false;
       el.healthDot.className = "dot bad";
-      el.healthText.textContent = "Offline";
+      el.healthText.textContent = "API offline";
     }
   }
 
+  async function loadQuestionsBank() {
+    // Prefer live API when backend is wired; fall back to static S3 copy.
+    try {
+      const r = await fetch("/api/questions", { cache: "no-store" });
+      if (r.ok) {
+        const q = await r.json();
+        if (q && (q.schema || q.quality)) return q;
+      }
+    } catch {
+      /* static fallback */
+    }
+    const r = await fetch("/questions.json", { cache: "no-store" });
+    if (!r.ok) throw new Error(`questions.json HTTP ${r.status}`);
+    const data = await r.json();
+    return {
+      schema: data.schema_agent || [],
+      quality: data.quality_agent || [],
+      memory: data.memory_session || [],
+    };
+  }
+
   async function loadBoot() {
-    const [q, m] = await Promise.all([
-      fetch("/api/questions").then((r) => r.json()),
-      fetch("/api/meta").then((r) => r.json()),
-    ]);
+    const q = await loadQuestionsBank();
     state.questions = q;
-    state.meta = m;
-    const bs = document.getElementById("blurbSchema");
-    const bq = document.getElementById("blurbQuality");
-    if (bs && m.agents?.schema?.blurb) bs.textContent = m.agents.schema.blurb;
-    if (bq && m.agents?.quality?.blurb) bq.textContent = m.agents.quality.blurb;
     renderQuestions();
-    renderMeta();
+
+    try {
+      const r = await fetch("/api/meta", { cache: "no-store" });
+      if (r.ok) {
+        const m = await r.json();
+        state.meta = m;
+        const bs = document.getElementById("blurbSchema");
+        const bq = document.getElementById("blurbQuality");
+        if (bs && m.agents?.schema?.blurb) bs.textContent = m.agents.schema.blurb;
+        if (bq && m.agents?.quality?.blurb) bq.textContent = m.agents.quality.blurb;
+        renderMeta();
+      }
+    } catch {
+      /* optional on static hosting */
+    }
   }
 
   async function send(e) {
@@ -335,7 +366,11 @@
       });
       if (!r.ok || !r.body) {
         const t = await r.text();
-        setStreamText(ui, t || `HTTP ${r.status}`);
+        const hint =
+          r.status === 403 || r.status === 404
+            ? "\n\nCloudFront is static-only right now. Wire `/api/*` to the FastAPI backend (`harness/ui/app.py`) to chat with agents."
+            : "";
+        setStreamText(ui, (t || `HTTP ${r.status}`) + hint);
         finishBubble(ui, { error: true, meta: { status: r.status } });
         return;
       }
@@ -422,7 +457,9 @@
   loadHealth();
   loadBoot().catch((err) => {
     el.healthDot.className = "dot bad";
-    el.healthText.textContent = "Offline";
+    if (!el.healthText.textContent || el.healthText.textContent === "…") {
+      el.healthText.textContent = "API offline";
+    }
     console.error(err);
   });
 })();
